@@ -1,0 +1,32 @@
+<p align="center">
+  <img src="BarShift.ico" width="96" alt="BarShift">
+</p>
+
+<h1 align="center">BarShift</h1>
+
+<p align="center">Une barre des tâches Windows simple et rapide, avec aperçu des fenêtres et prise en charge de plusieurs écrans.</p>
+
+## Fonctionnalités
+
+- **Barres personnalisables** : plusieurs profils d'applications (Général, Jeux, Code, Pro…), changement rapide par raccourci clavier
+- **Aperçu des fenêtres au survol** : miniatures en direct, clic sur une miniature pour aller à la fenêtre
+- **Plusieurs écrans** : une barre sur chaque écran, avec aperçu sur chacune
+- **Plein écran** : la barre se cache sur l'écran où une vidéo ou un jeu est en plein écran
+- **Remplace la barre Windows** (optionnel) : masque la barre des tâches d'origine
+- Éléments au choix : bouton Démarrer, recherche, vue des tâches, Wi-Fi, volume, batterie, heure, afficher le bureau
+
+## Installation
+
+Télécharge `BarShift-Setup.exe` dans l'onglet **Releases** et lance-le. Windows 10/11 64 bits.
+
+Pour revenir à la barre Windows d'origine : décoche l'option dans les paramètres, ou lance `BarShift.exe --restore-taskbar`.
+
+## Compiler soi-même
+
+Il faut le [SDK .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0).
+
+```
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+```
+
+L'installeur se fabrique ensuite avec [Inno Setup](https://jrsoftware.org/isdl.php) en ouvrant `installer/BarShift.iss`.

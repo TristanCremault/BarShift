@@ -1,0 +1,12 @@
+# Dossiers générés par la compilation
+bin/
+obj/
+publish/
+
+# Installeur compilé (à mettre dans les "Releases" GitHub, pas dans le code)
+installer/output/
+
+# Fichiers d'éditeur
+.vs/
+*.user
+*.suo

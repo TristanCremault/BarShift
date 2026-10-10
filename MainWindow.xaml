@@ -1,0 +1,147 @@
+<Window x:Class="BarShift.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BarShift" Height="48" Width="800"
+        WindowStyle="None" ResizeMode="NoResize" Topmost="True"
+        ShowInTaskbar="False" Background="#0B0B1A">
+
+    <Window.Resources>
+        <!-- Style plat pour tous les boutons de la barre -->
+        <Style TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#33FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="8,0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Gauche : bouton Windows + recherche + vue des tâches + nom de la barre -->
+        <StackPanel Grid.Column="0" Orientation="Horizontal"
+                    HorizontalAlignment="Left" VerticalAlignment="Center">
+            <Button x:Name="StartButton" Width="40" Height="40" Margin="0,0,6,0"
+                    Background="Transparent" BorderThickness="0"
+                    ToolTip="Démarrer" Click="StartButton_Click">
+                <UniformGrid Rows="2" Columns="2" Width="18" Height="18">
+                    <Rectangle Fill="#4CC2FF" Margin="1"/>
+                    <Rectangle Fill="#4CC2FF" Margin="1"/>
+                    <Rectangle Fill="#4CC2FF" Margin="1"/>
+                    <Rectangle Fill="#4CC2FF" Margin="1"/>
+                </UniformGrid>
+            </Button>
+
+            <Button x:Name="SearchButton" Width="200" Height="36" Padding="12,0"
+                    Background="#22FFFFFF" BorderThickness="0"
+                    HorizontalContentAlignment="Left"
+                    ToolTip="Rechercher" Click="SearchButton_Click">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE721;"
+                               Foreground="White" FontSize="14"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="Rechercher" Foreground="#BBFFFFFF"
+                               Margin="10,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <Button x:Name="TaskViewButton" Width="40" Height="40" Margin="6,0,0,0"
+                    Background="Transparent" BorderThickness="0"
+                    ToolTip="Vue des tâches (Win+Tab)" Click="TaskView_Click">
+                <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE7C4;"
+                           Foreground="White" FontSize="16"/>
+            </Button>
+
+            <!-- Nom de la barre active -->
+            <TextBlock x:Name="BarNameText" Margin="10,0,0,0" VerticalAlignment="Center"
+                       Foreground="#99FFFFFF" FontSize="11" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" MaxWidth="140"/>
+        </StackPanel>
+
+        <!-- Centre : applications épinglées et ouvertes -->
+        <StackPanel x:Name="AppsPanel" Grid.Column="1" Orientation="Horizontal"
+                    VerticalAlignment="Center"/>
+
+        <!-- Droite : paramètres, zone de notification, état du système, horloge, afficher le bureau -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal"
+                    HorizontalAlignment="Right" VerticalAlignment="Center">
+
+            <!-- Paramètres de BarShift (clic droit : changer de barre, masquer la barre Windows) -->
+            <Button x:Name="SettingsButton" Width="36" Height="36"
+                    Background="Transparent" BorderThickness="0"
+                    ToolTip="Paramètres de BarShift (clic droit : changer de barre)"
+                    Click="Settings_Click">
+                <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE713;"
+                           Foreground="White" FontSize="16"/>
+            </Button>
+
+            <Border Width="1" Height="28" Background="#44FFFFFF" Margin="8,0"/>
+
+            <!-- Zone de notification Windows (visible seulement si la barre Windows est masquée) -->
+            <Button x:Name="TrayButton" Width="32" Height="36"
+                    Background="Transparent" BorderThickness="0" Visibility="Collapsed"
+                    ToolTip="Zone de notification Windows (icônes cachées)"
+                    Click="TrayButton_Click">
+                <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE70E;"
+                           Foreground="White" FontSize="14"/>
+            </Button>
+
+            <!-- Paramètres rapides : Wi-Fi, volume, batterie -->
+            <Button x:Name="QuickSettingsButton" Height="40" Padding="10,0"
+                    Background="Transparent" BorderThickness="0"
+                    ToolTip="Paramètres rapides (Win+A)" Click="QuickSettings_Click">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="WifiIcon"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE701;"
+                               Foreground="White" FontSize="15" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="VolumeIcon"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE767;"
+                               Foreground="White" FontSize="15" Margin="10,0,0,0"
+                               VerticalAlignment="Center"/>
+                    <StackPanel x:Name="BatteryPanel" Orientation="Horizontal"
+                                Margin="10,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="BatteryIcon"
+                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE83F;"
+                                   Foreground="White" FontSize="15" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="BatteryText" Foreground="White" FontSize="12"
+                                   Margin="4,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+            </Button>
+
+            <!-- Horloge : ouvre les notifications et le calendrier -->
+            <Button x:Name="ClockButton" Height="40" Padding="10,0"
+                    Background="Transparent" BorderThickness="0"
+                    ToolTip="Notifications et calendrier (Win+N)" Click="Notifications_Click">
+                <TextBlock x:Name="ClockText" Foreground="White" FontSize="12"
+                           TextAlignment="Right" VerticalAlignment="Center"/>
+            </Button>
+
+            <!-- Afficher le bureau -->
+            <Button x:Name="ShowDesktopButton" Width="14" Height="40" Padding="0" Margin="2,0,0,0"
+                    Background="Transparent" BorderThickness="0"
+                    ToolTip="Afficher le bureau (Win+D)" Click="ShowDesktop_Click">
+                <Border Width="1" Height="28" Background="#66FFFFFF"/>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>

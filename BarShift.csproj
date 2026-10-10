@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+
+    <!-- Identité de l'application -->
+    <ApplicationIcon>BarShift.ico</ApplicationIcon>
+    <AssemblyName>BarShift</AssemblyName>
+    <Product>BarShift</Product>
+    <Company>BarShift</Company>
+    <Description>Barre des tâches personnalisable avec plusieurs profils</Description>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+</Project>
