@@ -21,6 +21,17 @@ Télécharge `BarShift-Setup.exe` dans l'onglet **Releases** et lance-le. Window
 
 Pour revenir à la barre Windows d'origine : décoche l'option dans les paramètres, ou lance `BarShift.exe --restore-taskbar`.
 
+### Windows affiche « Windows a protégé votre ordinateur » ?
+
+C'est normal : le filtre SmartScreen de Windows prévient pour tous les programmes récents qui ne sont pas signés par un certificat payant. BarShift est open source, tu peux lire tout le code dans ce dépôt.
+
+Pour continuer l'installation :
+
+1. Clique sur **Informations complémentaires**
+2. Clique sur **Exécuter quand même**
+
+Si ton antivirus met le fichier en quarantaine, c'est un faux positif : BarShift masque la barre des tâches et surveille les fenêtres, ce qui ressemble au comportement de certains logiciels malveillants. Tu peux aussi compiler BarShift toi-même (voir plus bas).
+
 ## Compiler soi-même
 
 Il faut le [SDK .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0).
