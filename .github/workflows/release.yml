@@ -1,0 +1,61 @@
+name: Compiler et publier BarShift
+
+on:
+  push:
+    tags: ['v*']        # se lance quand tu crées une étiquette comme v1.0
+  workflow_dispatch:    # ou à la main depuis l'onglet Actions
+
+permissions:
+  contents: write       # nécessaire pour créer la version GitHub
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Compiler BarShift
+        run: dotnet publish BarShift.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+
+      - name: Installer Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Fabriquer l'installeur
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\BarShift.iss'
+
+      - name: Garder l'installeur (non signé)
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: BarShift-Setup-non-signe
+          path: installer/output/BarShift-Setup.exe
+
+      # ------------------------------------------------------------------
+      # SIGNATURE SIGNPATH : à activer SEULEMENT après acceptation de la demande.
+      # Retire les # ci-dessous, puis remplis les valeurs (voir ton tableau de bord SignPath).
+      # Ajoute aussi le secret SIGNPATH_API_TOKEN dans Settings > Secrets and variables > Actions.
+      # Vérifie les noms exacts dans la documentation de SignPath.
+      # ------------------------------------------------------------------
+      # - name: Signer avec SignPath
+      #   uses: signpath/github-action-submit-signing-request@v1
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: 'METS-ICI-TON-ID-ORGANISATION'
+      #     project-slug: 'BarShift'
+      #     signing-policy-slug: 'release-signing'
+      #     github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+      #     wait-for-completion: true
+      #     output-artifact-directory: signed
+
+      - name: Publier la version
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/BarShift-Setup.exe
+          # Quand la signature est activée, remplace par : signed/BarShift-Setup.exe
