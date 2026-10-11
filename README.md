@@ -46,18 +46,6 @@ L'installeur se fabrique ensuite avec [Inno Setup](https://jrsoftware.org/isdl.p
 
 BarShift est publié sous licence [MIT](LICENSE).
 
-## Signature du code et confidentialité
+## Confidentialité
 
-**Signature.** Les versions Windows de BarShift sont destinées à être signées gratuitement par la [SignPath Foundation](https://signpath.org). La demande est en cours ; ce paragraphe sera mis à jour une fois la signature active.
-
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
-
-**Rôles de signature.**
-
-| Rôle | Personne |
-|---|---|
-| Auteur (code source) | [TristanCremault](https://github.com/TristanCremault) |
-| Relecteur | [TristanCremault](https://github.com/TristanCremault) |
-| Approbateur des signatures | [TristanCremault](https://github.com/TristanCremault) |
-
-**Confidentialité.** BarShift ne collecte aucune donnée personnelle et n'envoie rien sur Internet. Ses réglages (profils, applications épinglées, raccourcis) restent sur ton ordinateur, dans `%APPDATA%\BarShift`.
+BarShift ne collecte aucune donnée personnelle et n'envoie rien sur Internet. Ses réglages (profils, applications épinglées, raccourcis) restent sur ton ordinateur, dans `%APPDATA%\BarShift`.

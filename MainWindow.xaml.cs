@@ -845,6 +845,22 @@ internal static class Native
             && rect.right >= info.rcMonitor.right && rect.bottom >= info.rcMonitor.bottom;
     }
 
+    public static string WorkAreaText(IntPtr hwnd)
+    {
+        IntPtr monitor = MonitorFromWindow(hwnd, 2);
+        var info = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return "?";
+        return $"{info.rcWork.left},{info.rcWork.top},{info.rcWork.right},{info.rcWork.bottom}";
+    }
+
+    public static string MonitorRectText(IntPtr hwnd)
+    {
+        IntPtr monitor = MonitorFromWindow(hwnd, 2);
+        var info = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return "?";
+        return $"{info.rcMonitor.left},{info.rcMonitor.top},{info.rcMonitor.right},{info.rcMonitor.bottom}";
+    }
+
     // Vrai si la fenêtre la plus haute de l'écran de cette barre est en plein écran,
     // même quand elle n'a pas le focus (ex. vidéo en plein écran sur l'écran 2 pendant qu'on clique sur l'écran 1)
     public static bool HasFullscreenWindowOnMonitorOf(IntPtr barHandle)
@@ -1035,6 +1051,201 @@ internal static class DebugLog
     }
 }
 
+// ---------- Pastilles de notification (applications du Microsoft Store) ----------
+
+internal static class NotificationBadges
+{
+    private const int SqliteRow = 100;
+    private const int OpenReadWrite = 2;
+
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int sqlite3_open_v2([MarshalAs(UnmanagedType.LPUTF8Str)] string filename, out IntPtr db, int flags, IntPtr vfs);
+
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int sqlite3_close(IntPtr db);
+
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int sqlite3_prepare_v2(IntPtr db, [MarshalAs(UnmanagedType.LPUTF8Str)] string sql, int length, out IntPtr statement, IntPtr tail);
+
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int sqlite3_step(IntPtr statement);
+
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int sqlite3_finalize(IntPtr statement);
+
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr sqlite3_column_text(IntPtr statement, int column);
+
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr sqlite3_column_blob(IntPtr statement, int column);
+
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int sqlite3_column_bytes(IntPtr statement, int column);
+
+    private static string _stamp = "";
+    private static Dictionary<string, string>? _cache;
+    private static bool _summaryLogged;
+
+    // Renvoie, pour chaque application (identifiant AUMID), la valeur de sa pastille ("3", "newMessage"...)
+    public static Dictionary<string, string>? Read(out string error)
+    {
+        error = "";
+
+        string folder = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Microsoft", "Windows", "Notifications");
+        string source = System.IO.Path.Combine(folder, "wpndatabase.db");
+        if (!File.Exists(source))
+        {
+            error = "wpndatabase.db introuvable";
+            return null;
+        }
+
+        string stamp = StampOf(source) + "|" + StampOf(source + "-wal");
+        if (stamp == _stamp && _cache != null) return _cache;
+
+        string temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "BarShift-wpn-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(temp);
+            string copy = System.IO.Path.Combine(temp, "wpndatabase.db");
+
+            // On lit une copie : la base d'origine est utilisée en permanence par Windows
+            foreach (string suffix in new[] { "", "-wal", "-shm" })
+            {
+                string from = source + suffix;
+                if (!File.Exists(from)) continue;
+
+                using var input = new FileStream(from, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var output = new FileStream(copy + suffix, FileMode.Create, FileAccess.Write);
+                input.CopyTo(output);
+            }
+
+            Dictionary<string, string>? badges = QueryBadges(copy, out error);
+            if (badges != null)
+            {
+                _stamp = stamp;
+                _cache = badges;
+            }
+            return badges;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return null;
+        }
+        finally
+        {
+            try { Directory.Delete(temp, true); } catch { /* fichier encore utilisé : sans importance */ }
+        }
+    }
+
+    private static string StampOf(string path) =>
+        File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks + ":" + new FileInfo(path).Length : "-";
+
+    private static Dictionary<string, string>? QueryBadges(string path, out string error)
+    {
+        error = "";
+
+        if (sqlite3_open_v2(path, out IntPtr db, OpenReadWrite, IntPtr.Zero) != 0)
+        {
+            error = "ouverture de la base impossible";
+            if (db != IntPtr.Zero) sqlite3_close(db);
+            return null;
+        }
+
+        try
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            string[] queries =
+            {
+                "SELECT nh.PrimaryId, n.Payload FROM Notification n JOIN NotificationHandler nh ON n.HandlerId = nh.RecordId WHERE n.Type = 'badge' ORDER BY n.ArrivalTime",
+                "SELECT nh.PrimaryId, n.Payload FROM Notification n JOIN NotificationHandler nh ON n.HandlerId = nh.RecordId WHERE n.Type = 'badge'"
+            };
+
+            bool done = false;
+            foreach (string sql in queries)
+            {
+                result.Clear();
+                done = RunQuery(db, sql, statement =>
+                {
+                    string id = Text(statement, 0);
+                    string value = ParseBadgeValue(Blob(statement, 1));
+                    if (id.Length == 0) return;
+
+                    if (value.Length == 0 || value.Equals("none", StringComparison.OrdinalIgnoreCase)) result.Remove(id);
+                    else result[id] = value;
+                });
+                if (done) break;
+            }
+
+            if (!done)
+            {
+                error = "requete refusee par la base";
+                return null;
+            }
+
+            if (!_summaryLogged)
+            {
+                _summaryLogged = true;
+                var lines = new List<string>();
+                RunQuery(db,
+                    "SELECT nh.PrimaryId, n.Type, COUNT(*) FROM Notification n JOIN NotificationHandler nh ON n.HandlerId = nh.RecordId GROUP BY nh.PrimaryId, n.Type",
+                    statement => lines.Add($"{Text(statement, 0)}/{Text(statement, 1)}={Text(statement, 2)}"));
+                DebugLog.Write("Notifications par application : " + string.Join("; ", lines));
+            }
+
+            return result;
+        }
+        finally
+        {
+            sqlite3_close(db);
+        }
+    }
+
+    private static bool RunQuery(IntPtr db, string sql, Action<IntPtr> onRow)
+    {
+        if (sqlite3_prepare_v2(db, sql, -1, out IntPtr statement, IntPtr.Zero) != 0)
+        {
+            if (statement != IntPtr.Zero) sqlite3_finalize(statement);
+            return false;
+        }
+
+        try
+        {
+            while (sqlite3_step(statement) == SqliteRow) onRow(statement);
+            return true;
+        }
+        finally
+        {
+            sqlite3_finalize(statement);
+        }
+    }
+
+    private static string Text(IntPtr statement, int column) =>
+        Marshal.PtrToStringUTF8(sqlite3_column_text(statement, column)) ?? "";
+
+    private static string Blob(IntPtr statement, int column)
+    {
+        IntPtr pointer = sqlite3_column_blob(statement, column);
+        int length = sqlite3_column_bytes(statement, column);
+        if (pointer == IntPtr.Zero || length <= 0) return "";
+
+        var bytes = new byte[length];
+        Marshal.Copy(pointer, bytes, 0, length);
+
+        bool utf16 = length >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) || bytes[1] == 0);
+        return utf16 ? System.Text.Encoding.Unicode.GetString(bytes) : System.Text.Encoding.UTF8.GetString(bytes);
+    }
+
+    private static string ParseBadgeValue(string payload)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(payload, "value\\s*=\\s*[\"']([^\"']*)[\"']");
+        return match.Success ? match.Groups[1].Value.Trim() : "";
+    }
+}
+
 // ---------- Réservation d'espace à l'écran ----------
 
 internal static class AppBar
@@ -1093,19 +1304,22 @@ internal static class AppBar
             right = monitorRect.right,
             bottom = monitorRect.bottom
         };
-        SHAppBarMessage(ABM_QUERYPOS, ref data);
-        int queriedBottom = data.rc.bottom;
-        data.rc.top = data.rc.bottom - barHeightPx;
+        int queriedBottom = -1;
+        if (!exact)
+        {
+            SHAppBarMessage(ABM_QUERYPOS, ref data);
+            queriedBottom = data.rc.bottom;
+            data.rc.top = data.rc.bottom - barHeightPx;
+        }
         SHAppBarMessage(ABM_SETPOS, ref data);
 
         DebugLog.Write($"AppBar hwnd={hwnd} exact={exact} ecran=({monitorRect.left},{monitorRect.top},{monitorRect.right},{monitorRect.bottom}) "
                        + $"bas apres QUERYPOS={queriedBottom} SETPOS=({data.rc.left},{data.rc.top},{data.rc.right},{data.rc.bottom})");
 
-        // exact : si Windows a repoussé la barre vers le haut (place réservée par une barre Windows cachée),
-        // on libère notre réservation et on se colle tout en bas, sur la zone déjà réservée par cette barre
-        if (exact && data.rc.bottom < monitorRect.bottom - 1)
+        if (exact)
         {
-            SHAppBarMessage(ABM_REMOVE, ref data);
+            // On demande à Windows de réserver la place tout en bas de l'écran (sans passer par QUERYPOS,
+            // qui nous repousse vers le haut) et on colle la barre exactement à cet endroit.
             MoveWindow(hwnd, monitorRect.left, monitorRect.bottom - barHeightPx,
                 monitorRect.right - monitorRect.left, barHeightPx, true);
             return;
@@ -1179,6 +1393,17 @@ internal sealed class SecondaryBarWindow : Window
         var dpi = VisualTreeHelper.GetDpi(this);
         int barHeightPx = (int)(BarHeightDip * dpi.DpiScaleY);
         AppBar.Register(hwnd, _monitorRect, barHeightPx, _exactPosition);
+    }
+
+    // Re-demande la place à Windows une fois la fenêtre affichée (comme pour la barre principale)
+    public void RefreshAppBar()
+    {
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero || HiddenForFullscreen) return;
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        int barHeightPx = (int)(BarHeightDip * dpi.DpiScaleY);
+        AppBar.Reposition(hwnd, _monitorRect, barHeightPx, _exactPosition);
     }
 
     public void UpdateBackground(Brush background) => Background = background;
@@ -1652,6 +1877,7 @@ public partial class MainWindow : Window
         public string AppId = "";
         public bool Pinned;
         public bool IsActive;
+        public string Badge = "";
         public List<IntPtr> Windows = new();
     }
 
@@ -1660,6 +1886,10 @@ public partial class MainWindow : Window
     private readonly List<int> _hotkeyIds = new();
     private readonly List<SecondaryBarWindow> _secondaryBars = new();
     private List<TaskItem> _lastItems = new();
+    private Dictionary<string, string> _badges = new(StringComparer.OrdinalIgnoreCase);
+    private bool _badgeReadRunning;
+    private string _badgeLogKey = "";
+    private string _badgeError = "";
     private int _currentProfile;
     private IntPtr _lastForeground = IntPtr.Zero;
     private string _lastSignature = "";
@@ -1844,6 +2074,7 @@ public partial class MainWindow : Window
         if (self == IntPtr.Zero) return;
 
         IntPtr foreground = Native.GetForegroundWindow();
+        LogFullscreenState(foreground, self);
 
         bool shouldHide = _config.HideInFullscreen
             && (Native.IsFullscreenWindow(foreground, self) || Native.HasFullscreenWindowOnMonitorOf(self));
@@ -1866,6 +2097,34 @@ public partial class MainWindow : Window
             bar.HiddenForFullscreen = hide;
             Native.ShowWindow(handle, hide ? Native.SW_HIDE : Native.SW_SHOWNOACTIVATE);
         }
+    }
+
+    private string _fullscreenLogKey = "";
+
+    // Écrit dans debug.log ce que BarShift voit, à chaque changement de fenêtre ou de taille
+    private void LogFullscreenState(IntPtr foreground, IntPtr self)
+    {
+        string rectText = Native.GetWindowRect(foreground, out Native.NativeRect r)
+            ? $"{r.left},{r.top},{r.right},{r.bottom}" : "?";
+        string key = $"{foreground}|{rectText}|{_config.HideInFullscreen}|{_secondaryBars.Count}";
+        if (key == _fullscreenLogKey) return;
+        _fullscreenLogKey = key;
+
+        var parts = new List<string>
+        {
+            $"Plein ecran : option={_config.HideInFullscreen} fenetre=[{Native.GetClass(foreground)} | {Native.GetText(foreground)}] rect=({rectText})"
+        };
+
+        var bars = new List<(string Name, IntPtr Handle)> { ("principale", self) };
+        for (int i = 0; i < _secondaryBars.Count; i++) bars.Add(($"secondaire{i + 1}", _secondaryBars[i].Handle));
+
+        foreach (var (name, handle) in bars)
+        {
+            parts.Add($"{name}: ecran=({Native.MonitorRectText(handle)}) focusPlein={Native.IsFullscreenWindow(foreground, handle)} "
+                      + $"scanPlein={Native.HasFullscreenWindowOnMonitorOf(handle)}");
+        }
+
+        DebugLog.Write(string.Join(" || ", parts));
     }
 
     private void SetHideInFullscreen(bool hide)
@@ -2278,6 +2537,8 @@ public partial class MainWindow : Window
             if (_config.HideWindowsTaskbar && !_peeking) TaskbarControl.KeepHidden();
         };
         timer.Start();
+
+        StartBadgeWatcher();
     }
 
     private void RefreshTaskbar()
@@ -2363,10 +2624,12 @@ public partial class MainWindow : Window
         bool foregroundMinimized = Native.IsIconic(_lastForeground);
         foreach (var item in items) item.IsActive = !foregroundMinimized && item.Windows.Contains(_lastForeground);
 
+        foreach (var item in items) item.Badge = GetBadgeFor(item);
+
         _lastItems = items;
 
         string signature = _currentProfile + "#" +
-            string.Join("|", items.Select(i => $"{i.Key}:{i.Windows.Count}:{i.IsActive}"));
+            string.Join("|", items.Select(i => $"{i.Key}:{i.Windows.Count}:{i.IsActive}:{i.Badge}"));
         if (signature != _lastSignature)
         {
             _lastSignature = signature;
@@ -2375,6 +2638,99 @@ public partial class MainWindow : Window
             foreach (var item in items) AppsPanel.Children.Add(BuildTaskButton(item));
             SyncSecondaryPanels();
         }
+    }
+
+    // ---------- Pastilles de notification ----------
+
+    private void StartBadgeWatcher()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        timer.Tick += async (_, _) =>
+        {
+            if (_badgeReadRunning) return;
+            _badgeReadRunning = true;
+            try
+            {
+                var (badges, error) = await System.Threading.Tasks.Task.Run(() =>
+                {
+                    var read = NotificationBadges.Read(out string message);
+                    return (read, message);
+                });
+
+                if (!string.IsNullOrEmpty(error) && error != _badgeError)
+                {
+                    _badgeError = error;
+                    DebugLog.Write("Pastilles : erreur de lecture : " + error);
+                }
+
+                if (badges == null) return;
+                _badges = badges;
+
+                string key = string.Join(";", badges.OrderBy(p => p.Key).Select(p => p.Key + "=" + p.Value));
+                if (key != _badgeLogKey)
+                {
+                    _badgeLogKey = key;
+                    DebugLog.Write("Pastilles : " + (key.Length == 0 ? "(aucune)" : key));
+                }
+            }
+            finally
+            {
+                _badgeReadRunning = false;
+            }
+        };
+        timer.Start();
+    }
+
+    private string GetBadgeFor(TaskItem item)
+    {
+        if (string.IsNullOrEmpty(item.AppId) || _badges.Count == 0) return "";
+
+        if (!_badges.TryGetValue(item.AppId, out string? value))
+        {
+            // Même application, identifiant légèrement différent : on compare le nom du paquet
+            string family = item.AppId.Split('!')[0] + "!";
+            value = _badges.FirstOrDefault(p => p.Key.StartsWith(family, StringComparison.OrdinalIgnoreCase)).Value;
+        }
+
+        if (string.IsNullOrEmpty(value)) return "";
+        if (int.TryParse(value, out int number)) return number > 0 ? number.ToString() : "";
+        return value;   // symbole (ex. newMessage) : on affichera un simple point
+    }
+
+    private static FrameworkElement BuildBadge(string value)
+    {
+        bool numeric = int.TryParse(value, out int number);
+        string text = numeric ? (number > 99 ? "99+" : number.ToString()) : "";
+
+        var badge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x24)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            MinWidth = text.Length == 0 ? 10 : 16,
+            Height = text.Length == 0 ? 10 : 16,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -1, -4, 0),
+            IsHitTestVisible = false
+        };
+
+        if (text.Length > 0)
+        {
+            badge.Child = new TextBlock
+            {
+                Text = text,
+                Foreground = Brushes.White,
+                FontSize = 9,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(2, 0, 2, 0)
+            };
+        }
+
+        return badge;
     }
 
     private static Border BuildIndicatorBar(double width, bool active)
@@ -2429,6 +2785,8 @@ public partial class MainWindow : Window
 
             grid.Children.Add(indicator);
         }
+
+        if (!string.IsNullOrEmpty(item.Badge)) grid.Children.Add(BuildBadge(item.Badge));
 
         var button = new Button
         {
@@ -2878,9 +3236,24 @@ public partial class MainWindow : Window
                 timer.Stop();
                 PositionBar();
                 RebuildSecondaryBars();
+                foreach (var bar in _secondaryBars) bar.RefreshAppBar();
+                LogWorkAreas();
             };
             timer.Start();
         }
+    }
+
+    private void LogWorkAreas()
+    {
+        var parts = new List<string>();
+        IntPtr self = new WindowInteropHelper(this).Handle;
+        parts.Add($"principale ecran=({Native.MonitorRectText(self)}) travail=({Native.WorkAreaText(self)})");
+        for (int i = 0; i < _secondaryBars.Count; i++)
+        {
+            IntPtr handle = _secondaryBars[i].Handle;
+            parts.Add($"secondaire{i + 1} ecran=({Native.MonitorRectText(handle)}) travail=({Native.WorkAreaText(handle)})");
+        }
+        DebugLog.Write("Zones de travail : " + string.Join(" || ", parts));
     }
 
     private void UnregisterBar()
